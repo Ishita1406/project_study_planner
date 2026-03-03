@@ -18,6 +18,7 @@ function App() {
   const [isCalendarConnected, setIsCalendarConnected] = useState(false);
   const [userEmail, setUserEmail] = useState('');
   const [calendarRefreshKey, setCalendarRefreshKey] = useState(0);
+  const [calendarEvents, setCalendarEvents] = useState([]);
 
 
   useEffect(() => {
@@ -40,10 +41,26 @@ function App() {
     try {
       const response = await fetch(`${API_URL}/auth/google/status`);
       const data = await response.json();
+      console.log("Auth status check:", data);
       setIsCalendarConnected(data.authenticated);
-      if (data.email) setUserEmail(data.email);
+      if (data.email) {
+        setUserEmail(data.email);
+        fetchCalendarEvents();
+      }
     } catch (error) {
       console.error("Failed to check auth status", error);
+    }
+  };
+
+  const fetchCalendarEvents = async () => {
+    try {
+      const response = await fetch(`${API_URL}/calendar/events`);
+      if (response.ok) {
+        const data = await response.json();
+        setCalendarEvents(data);
+      }
+    } catch (error) {
+      console.error("Failed to fetch calendar events", error);
     }
   };
 
@@ -63,13 +80,27 @@ function App() {
       if (response.ok) {
         const data = await response.json();
         alert(data.message);
-
+        fetchCalendarEvents();
+        setCalendarRefreshKey(prev => prev + 1);
       } else {
         alert("Failed to sync. Please try reconnecting.");
         setIsCalendarConnected(false);
       }
     } catch (error) {
       alert("Error syncing calendar");
+    }
+  };
+
+  const disconnectCalendar = async () => {
+    if (!confirm("Are you sure you want to disconnect your Google Calendar?")) return;
+    try {
+      await fetch(`${API_URL}/auth/google/logout`, { method: 'POST' });
+      setIsCalendarConnected(false);
+      setUserEmail('');
+      setCalendarEvents([]);
+      alert("Disconnected successfully");
+    } catch (error) {
+      alert("Failed to disconnect");
     }
   };
 
@@ -109,6 +140,7 @@ function App() {
   const generatePlan = async () => {
     await fetch(`${API_URL}/generate-plan`, { method: 'POST' });
     fetchTasks();
+    fetchCalendarEvents();
     setCalendarRefreshKey(prev => prev + 1);
   };
 
@@ -160,10 +192,18 @@ function App() {
       {isCalendarConnected && (
         <section className="section">
           <div className="glass-card">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
               <h2>Your Calendar</h2>
-              <button className="btn btn-secondary" onClick={syncCalendar}>Sync Now</button>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button className="btn btn-secondary" onClick={syncCalendar}>Sync Now</button>
+                <button className="btn btn-danger" style={{ padding: '8px 12px' }} onClick={disconnectCalendar}>Disconnect</button>
+              </div>
             </div>
+            {userEmail && (
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '1.5rem' }}>
+                Connected as: <span style={{ color: 'var(--primary-color)', fontWeight: '500' }}>{userEmail}</span>
+              </p>
+            )}
             <div className="calendar-container" style={{ height: '500px', display: 'flex', flexDirection: 'column' }}>
               <iframe
                 key={calendarRefreshKey}
@@ -187,6 +227,24 @@ function App() {
                 </p>
               </div>
             </div>
+
+            {calendarEvents.length > 0 && (
+              <div style={{ marginTop: '2rem' }}>
+                <h3 style={{ fontSize: '1.2rem', marginBottom: '1rem' }}>Upcoming Study Sessions (Verified)</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {calendarEvents.map((event, idx) => (
+                    <div key={event.id || idx} className="glass-card" style={{ padding: '12px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ fontWeight: '500' }}>{event.summary}</span>
+                        <span style={{ fontSize: '0.85rem', color: 'var(--primary-color)' }}>
+                          {event.start?.date || (event.start?.dateTime && new Date(event.start.dateTime).toLocaleDateString())}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </section>
       )}

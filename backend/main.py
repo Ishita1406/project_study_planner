@@ -11,7 +11,16 @@ from psycopg2.extras import RealDictCursor
 import os
 from dotenv import load_dotenv
 import json
-from calendar_service import get_google_auth_url, exchange_code_for_token, sync_tasks, move_event, get_user_email, delete_event, update_event_title
+from calendar_service import (
+    get_google_auth_url, 
+    exchange_code_for_token, 
+    sync_tasks, 
+    move_event, 
+    get_user_email, 
+    delete_event, 
+    update_event_title,
+    get_upcoming_events
+)
 
 # Load environment variables from .env (if present)
 load_dotenv()
@@ -276,8 +285,13 @@ async def update_task(task_id: int, update: TaskUpdate):
     conn = get_db()
     cur = conn.cursor()
     
-    # Get current task
-    cur.execute("SELECT * FROM daily_tasks WHERE id = %s", (task_id,))
+    # Get current task with subject name
+    cur.execute("""
+        SELECT dt.*, s.name as subject_name 
+        FROM daily_tasks dt 
+        JOIN subjects s ON dt.subject_id = s.id 
+        WHERE dt.id = %s
+    """, (task_id,))
     task = cur.fetchone()
     
     if not task:
@@ -389,7 +403,7 @@ async def google_auth_callback(code: str):
             json.dump(creds_dict, token_file)
             
         # Redirect back to frontend
-        return RedirectResponse("http://localhost:5174?auth=success")
+        return RedirectResponse("http://localhost:5173?auth=success")
     except Exception as e:
         print(f"OAuth Callback Error: {str(e)}")
         traceback.print_exc()
@@ -408,7 +422,11 @@ async def get_auth_status():
     return {"authenticated": False, "email": None}
 
 
-@app.post("/sync-calendar")
+@app.post("/auth/google/logout")
+async def google_logout():
+    if os.path.exists("token.json"):
+        os.remove("token.json")
+    return {"message": "Logged out successfully"}
 async def trigger_sync():
     if not os.path.exists("token.json"):
         raise HTTPException(status_code=401, detail="Not authenticated. Please connect Google Calendar first.")
@@ -452,6 +470,21 @@ async def trigger_sync():
         cur.close()
         conn.close()
 
+
+
+@app.get("/calendar/events")
+async def fetch_calendar_events():
+    if not os.path.exists("token.json"):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    with open("token.json", "r") as token_file:
+        creds_dict = json.load(token_file)
+        
+    try:
+        events = get_upcoming_events(creds_dict)
+        return events
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":

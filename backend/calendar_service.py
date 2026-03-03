@@ -55,8 +55,19 @@ def exchange_code_for_token(code):
     return json.loads(creds.to_json())
 
 def get_calendar_service(creds_json):
-    """Builds and returns the Calendar service."""
+    """Builds and returns the Calendar service. Refreshes token if necessary."""
     creds = Credentials.from_authorized_user_info(creds_json, SCOPES)
+    
+    if creds and creds.expired and creds.refresh_token:
+        from google.auth.transport.requests import Request
+        try:
+            creds.refresh(Request())
+            # We don't have an easy way to save the updated creds back to token.json 
+            # from here without changing the function signature, but the refreshed
+            # creds will work for the current request.
+        except Exception as e:
+            print(f"Error refreshing token: {e}")
+            
     return build('calendar', 'v3', credentials=creds)
 
 def sync_tasks(tasks, creds_json):
@@ -188,3 +199,22 @@ def update_event_title(google_event_id, new_title, creds_json):
     except HttpError as error:
         print(f"Failed to update event title: {error}")
         return None
+
+def get_upcoming_events(creds_json, max_results=10):
+    """
+    Fetches upcoming events from the user's primary calendar.
+    """
+    service = get_calendar_service(creds_json)
+    try:
+        now = datetime.datetime.utcnow().isoformat() + 'Z'
+        events_result = service.events().list(
+            calendarId='primary', 
+            timeMin=now,
+            maxResults=max_results, 
+            singleEvents=True,
+            orderBy='startTime'
+        ).execute()
+        return events_result.get('items', [])
+    except Exception as e:
+        print(f"Error fetching events: {e}")
+        return []
