@@ -1,4 +1,8 @@
 import { useState, useEffect } from 'react';
+import FullCalendar from '@fullcalendar/react';
+import dayGridPlugin from '@fullcalendar/daygrid';
+import timeGridPlugin from '@fullcalendar/timegrid';
+import interactionPlugin from '@fullcalendar/interaction';
 
 const API_URL = 'http://localhost:8000';
 
@@ -154,6 +158,34 @@ function App() {
     setCalendarRefreshKey(prev => prev + 1);
   };
 
+  const handleEventDrop = async (info) => {
+    const { event } = info;
+    
+    // Use local date components instead of ISO string to avoid timezone shifts
+    const year = event.start.getFullYear();
+    const month = String(event.start.getMonth() + 1).padStart(2, '0');
+    const day = String(event.start.getDate()).padStart(2, '0');
+    const newDate = `${year}-${month}-${day}`;
+    
+    try {
+      const response = await fetch(`${API_URL}/calendar/events/move?event_id=${event.id}&new_date=${newDate}`, {
+        method: 'PATCH'
+      });
+      
+      if (response.ok) {
+        // Refresh everything to stay in sync
+        fetchCalendarEvents();
+        fetchTasks(selectedDate);
+      } else {
+        alert("Failed to move event in calendar");
+        info.revert();
+      }
+    } catch (error) {
+      console.error("Error moving event:", error);
+      info.revert();
+    }
+  };
+
   const deleteSubject = async (subjectId) => {
     await fetch(`${API_URL}/subjects/${subjectId}`, { method: 'DELETE' });
     fetchSubjects();
@@ -204,14 +236,34 @@ function App() {
                 Connected as: <span style={{ color: 'var(--primary-color)', fontWeight: '500' }}>{userEmail}</span>
               </p>
             )}
-            <div className="calendar-container" style={{ height: '500px', display: 'flex', flexDirection: 'column' }}>
-              <iframe
-                key={calendarRefreshKey}
-                src={`https://calendar.google.com/calendar/embed?src=${encodeURIComponent(userEmail || 'primary')}&mode=WEEK&ctz=Asia/Kolkata&hl=en&showTitle=0&showNav=1&showDate=1&showPrint=0&showTabs=0&showCalendars=0&showTz=1`}
-                style={{ border: 0, width: '100%', flexGrow: 1 }}
-                frameBorder="0"
-                scrolling="no"
-              ></iframe>
+            <div className="calendar-container" style={{ minHeight: '600px', background: 'rgba(0,0,0,0.2)', padding: '10px' }}>
+              <FullCalendar
+                plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
+                initialView="timeGridWeek"
+                headerToolbar={{
+                  left: 'prev,next today',
+                  center: 'title',
+                  right: 'dayGridMonth,timeGridWeek,timeGridDay'
+                }}
+                events={calendarEvents.map(event => ({
+                  id: event.id,
+                  title: event.summary,
+                  start: event.start?.dateTime || event.start?.date,
+                  end: event.end?.dateTime || event.end?.date,
+                  backgroundColor: 'var(--primary-color)',
+                  borderColor: 'var(--primary-color)',
+                  textColor: '#fff'
+                }))}
+                editable={true}
+                droppable={true}
+                eventDrop={handleEventDrop}
+                height="auto"
+                nowIndicator={true}
+                slotMinTime="07:00:00"
+                slotMaxTime="23:00:00"
+                allDaySlot={true}
+                themeSystem="standard"
+              />
               <div style={{ marginTop: '1rem', textAlign: 'center' }}>
                 <a 
                   href="https://calendar.google.com/calendar" 

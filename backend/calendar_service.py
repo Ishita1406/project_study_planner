@@ -210,11 +210,22 @@ def get_upcoming_events(creds_json, max_results=10):
         events_result = service.events().list(
             calendarId='primary', 
             timeMin=now,
-            maxResults=max_results, 
+            maxResults=max_results * 20, # Fetch even more to be safe
             singleEvents=True,
             orderBy='startTime'
         ).execute()
-        return events_result.get('items', [])
+        all_events = events_result.get('items', [])
+        
+        # Robust filter: check for "Study:" prefix, allowing for the checkmark or variations
+        filtered_events = []
+        for e in all_events:
+            summary = e.get('summary', '').strip()
+            # Check for "Study:" or "✓ Study:" or "✓Study:" etc.
+            if summary.startswith("Study:") or "Study:" in summary[:10]:
+                filtered_events.append(e)
+        
+        print(f"Fetched {len(all_events)} events, filtered down to {len(filtered_events)} study sessions.")
+        return filtered_events[:max_results]
     except Exception as e:
         print(f"Error fetching events: {e}")
         return []

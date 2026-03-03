@@ -487,6 +487,41 @@ async def fetch_calendar_events():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.patch("/calendar/events/move")
+async def move_calendar_event(event_id: str, new_date: date):
+    if not os.path.exists("token.json"):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    
+    with open("token.json", "r") as token_file:
+        creds_dict = json.load(token_file)
+    
+    # Update Google Calendar
+    try:
+        move_event(event_id, new_date, creds_dict)
+    except Exception as e:
+        print(f"Failed to move Google Calendar event: {e}")
+        # Even if Google sync fails, we might want to update local DB? 
+        # Usually better to stay in sync.
+    
+    # Update local database
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "UPDATE daily_tasks SET scheduled_date = %s WHERE google_event_id = %s",
+            (new_date, event_id)
+        )
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+    
+    return {"message": "Event moved successfully"}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
