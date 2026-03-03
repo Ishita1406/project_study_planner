@@ -1,0 +1,69 @@
+nohup: ignoring input
+/home/ishita/.local/lib/python3.10/site-packages/google/api_core/_python_version_support.py:275: FutureWarning: You are using a Python version (3.10.12) which Google will stop supporting in new releases of google.api_core once it reaches its end of life (2026-10-04). Please upgrade to the latest Python version, or at least Python 3.11, to continue receiving updates for google.api_core past that date.
+  warnings.warn(message, FutureWarning)
+/home/ishita/project_study_planner/backend/main.py:66: DeprecationWarning: 
+        on_event is deprecated, use lifespan event handlers instead.
+
+        Read more about it in the
+        [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+        
+  @app.on_event("startup")
+INFO:     Started server process [39634]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:51130 - "GET /subjects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51138 - "GET /auth/google/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51130 - "GET /subjects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51138 - "GET /auth/google/status HTTP/1.1" 200 OK
+Auto-synced 2 tasks
+INFO:     127.0.0.1:51138 - "POST /generate-plan HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51138 - "GET /tasks HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55548 - "GET /subjects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55558 - "GET /auth/google/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55548 - "GET /subjects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55558 - "GET /auth/google/status HTTP/1.1" 200 OK
+Auto-synced 2 tasks
+INFO:     127.0.0.1:33068 - "POST /generate-plan HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33068 - "GET /tasks HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36200 - "OPTIONS /tasks/34 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36212 - "PATCH /tasks/34 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36212 - "GET /tasks HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48510 - "OPTIONS /tasks/33 HTTP/1.1" 200 OK
+Failed to auto-sync completion: 'subject_name'
+INFO:     127.0.0.1:48514 - "PATCH /tasks/33 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48514 - "GET /tasks HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42636 - "GET /subjects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42640 - "GET /auth/google/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42636 - "GET /subjects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42640 - "GET /auth/google/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39450 - "GET /subjects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39458 - "GET /auth/google/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39450 - "GET /subjects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39458 - "GET /auth/google/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50002 - "OPTIONS /subjects/4 HTTP/1.1" 200 OK
+Failed to delete event: <HttpError 410 when requesting https://www.googleapis.com/calendar/v3/calendars/primary/events/9h353eoq6cgfao2tavko5hr31o? returned "Resource has been deleted". Details: "[{'domain': 'global', 'reason': 'deleted', 'message': 'Resource has been deleted'}]">
+Failed to delete event: <HttpError 410 when requesting https://www.googleapis.com/calendar/v3/calendars/primary/events/bblks8kf1benu6e4amsobjt74o? returned "Resource has been deleted". Details: "[{'domain': 'global', 'reason': 'deleted', 'message': 'Resource has been deleted'}]">
+INFO:     127.0.0.1:50016 - "DELETE /subjects/4 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50016 - "GET /subjects HTTP/1.1" 200 OK
+/home/ishita/project_study_planner/backend/main.py:119: PydanticDeprecatedSince20: The `dict` method is deprecated; use `model_dump` instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.5/migration/
+  return {"id": subject_id, **subject.dict()}
+INFO:     127.0.0.1:52420 - "POST /subjects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52420 - "GET /subjects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51148 - "POST /subjects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51148 - "GET /subjects HTTP/1.1" 200 OK
+Auto-synced 4 tasks
+INFO:     127.0.0.1:60740 - "POST /generate-plan HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60740 - "GET /tasks HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56238 - "GET /subjects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56250 - "GET /auth/google/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56238 - "GET /subjects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56250 - "GET /auth/google/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34858 - "GET /subjects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34872 - "GET /auth/google/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34858 - "GET /subjects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34872 - "GET /auth/google/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57324 - "GET /subjects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57336 - "GET /auth/google/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57324 - "GET /subjects HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57336 - "GET /auth/google/status HTTP/1.1" 200 OK
