@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import {
   ActiveView,
   User,
@@ -31,10 +32,84 @@ import { NotificationPanel } from './components/common/NotificationPanel';
 import { AddDeadlineModal } from './components/common/AddDeadlineModal';
 import { AddSubjectModal } from './components/subjects/AddSubjectModal';
 import { AddTaskModal } from './components/planner/AddTaskModal';
+import { AuthView } from './components/auth/AuthView';
+
+const VIEW_PATHS: Record<ActiveView, string> = {
+  dashboard: '/',
+  planner: '/planner',
+  subjects: '/subjects',
+  sessions: '/sessions',
+  analytics: '/analytics',
+  settings: '/settings',
+  'generate-plan': '/generate-plan',
+};
+
+const AUTH_PATHS = {
+  login: '/login',
+  signup: '/signup',
+} as const;
+
+type AuthMode = keyof typeof AUTH_PATHS;
+
+const normalizePath = (pathname: string) => pathname.replace(/\/+$/, '') || '/';
+
+const getViewFromPath = (pathname: string): ActiveView | null => {
+  const normalizedPath = normalizePath(pathname);
+  const match = (Object.entries(VIEW_PATHS) as [ActiveView, string][]).find(
+    ([, path]) => path === normalizedPath
+  );
+
+  return match?.[0] ?? null;
+};
+
+const getAuthModeFromPath = (pathname: string): AuthMode | null => {
+  const normalizedPath = normalizePath(pathname);
+  const match = (Object.entries(AUTH_PATHS) as [AuthMode, string][]).find(
+    ([, path]) => path === normalizedPath
+  );
+
+  return match?.[0] ?? null;
+};
 
 export default function App() {
   // Navigation
-  const [currentView, setCurrentView] = useState<ActiveView>('dashboard');
+  const location = useLocation();
+  const navigate = useNavigate();
+  const routedView = getViewFromPath(location.pathname);
+  const authMode = getAuthModeFromPath(location.pathname);
+  const currentView = routedView ?? 'dashboard';
+  const [isAuthenticated, setIsAuthenticated] = useState(
+    () => sessionStorage.getItem('sp_auth_v1') === 'true'
+  );
+
+  const handleNavigate = useCallback(
+    (view: ActiveView) => {
+      navigate(VIEW_PATHS[view]);
+    },
+    [navigate]
+  );
+
+  const handleAuthSuccess = useCallback(
+    (authenticatedUser: User) => {
+      StorageService.saveUser(authenticatedUser);
+      setUser(authenticatedUser);
+      setIsAuthenticated(true);
+      sessionStorage.setItem('sp_auth_v1', 'true');
+      navigate('/');
+    },
+    [navigate]
+  );
+
+  const handleDemoLogin = useCallback(() => {
+    handleAuthSuccess(StorageService.getUser());
+  }, [handleAuthSuccess]);
+
+  const handleAuthModeChange = useCallback(
+    (mode: AuthMode) => {
+      navigate(AUTH_PATHS[mode]);
+    },
+    [navigate]
+  );
 
   // Core Data States
   const [user, setUser] = useState<User>(StorageService.getUser());
@@ -84,6 +159,12 @@ export default function App() {
       console.error('Error fetching data', err);
     }
   }, []);
+
+  useEffect(() => {
+    if (!routedView && !authMode) {
+      navigate(isAuthenticated ? '/' : '/login', { replace: true });
+    }
+  }, [routedView, authMode, isAuthenticated, navigate]);
 
   useEffect(() => {
     refreshAllData();
@@ -185,7 +266,7 @@ export default function App() {
   // Handlers for Sessions & Timer
   const handleStartSession = (taskId: string) => {
     setActiveSessionTaskId(taskId);
-    setCurrentView('sessions');
+    handleNavigate('sessions');
   };
 
   const handleSaveStudySession = async (
@@ -227,12 +308,31 @@ export default function App() {
     showToast('All data cleared (Empty state mode)');
   };
 
+  if (!isAuthenticated) {
+    if (!authMode) {
+      return <Navigate to="/login" replace />;
+    }
+
+    return (
+      <AuthView
+        initialMode={authMode}
+        onAuthSuccess={handleAuthSuccess}
+        onDemoLogin={handleDemoLogin}
+        onModeChange={handleAuthModeChange}
+      />
+    );
+  }
+
+  if (authMode) {
+    return <Navigate to="/" replace />;
+  }
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-slate-50 text-slate-900 font-sans antialiased">
       {/* 1. Sidebar Navigation */}
       <Sidebar
         currentView={currentView}
-        onNavigate={setCurrentView}
+        onNavigate={handleNavigate}
         user={user}
         onOpenNotifications={() => setIsNotificationOpen(true)}
         unreadNotificationsCount={
@@ -251,7 +351,7 @@ export default function App() {
         {/* Top Header */}
         <Header
           currentView={currentView}
-          onNavigate={setCurrentView}
+          onNavigate={handleNavigate}
           isSessionRunning={currentView === 'sessions'}
           onQuickAddSubject={() => setIsAddSubjectOpen(true)}
           onQuickAddTask={() => setIsAddTaskOpen(true)}
@@ -266,7 +366,7 @@ export default function App() {
               topics={topics}
               tasks={tasks}
               deadlines={deadlines}
-              onNavigate={setCurrentView}
+              onNavigate={handleNavigate}
               onToggleTaskStatus={handleToggleTaskStatus}
               onStartSession={handleStartSession}
               onDeleteTask={handleDeleteTask}
@@ -285,7 +385,7 @@ export default function App() {
               onRebalancePlan={handleRebalancePlan}
               onDeleteTask={handleDeleteTask}
               onStartSession={handleStartSession}
-              onNavigate={setCurrentView}
+              onNavigate={handleNavigate}
             />
           )}
 
@@ -309,7 +409,7 @@ export default function App() {
               deadlines={deadlines}
               onGeneratePlan={handleGeneratePlan}
               onAcceptPlan={handleAcceptPlan}
-              onNavigate={setCurrentView}
+              onNavigate={handleNavigate}
             />
           )}
 
@@ -320,7 +420,7 @@ export default function App() {
               tasks={tasks}
               initialTaskId={activeSessionTaskId}
               onSaveSession={handleSaveStudySession}
-              onNavigate={setCurrentView}
+              onNavigate={handleNavigate}
             />
           )}
 
@@ -355,7 +455,7 @@ export default function App() {
         tasks={tasks}
         onNavigateToPlanner={() => {
           setIsNotificationOpen(false);
-          setCurrentView('planner');
+          handleNavigate('planner');
         }}
       />
 

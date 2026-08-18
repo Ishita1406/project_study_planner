@@ -1,13 +1,20 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { User } from '../../types';
 
 interface AuthViewProps {
   onAuthSuccess: (user: User) => void;
   onDemoLogin: () => void;
+  initialMode?: 'login' | 'signup';
+  onModeChange?: (mode: 'login' | 'signup') => void;
 }
 
-export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess, onDemoLogin }) => {
-  const [isLogin, setIsLogin] = useState(true);
+export const AuthView: React.FC<AuthViewProps> = ({
+  onAuthSuccess,
+  onDemoLogin,
+  initialMode = 'login',
+  onModeChange,
+}) => {
+  const [isLogin, setIsLogin] = useState(initialMode === 'login');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -17,6 +24,16 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess, onDemoLogin }
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
+
+  useEffect(() => {
+    setIsLogin(initialMode === 'login');
+  }, [initialMode]);
+
+  const setMode = (mode: 'login' | 'signup') => {
+    setIsLogin(mode === 'login');
+    setErrorMessage(null);
+    onModeChange?.(mode);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,7 +56,8 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess, onDemoLogin }
         name: isLogin ? (email.split('@')[0] || 'Alex Hunter') : name,
         email: email,
         avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${email}`,
-        major: targetDegree,
+        targetSemester: 'Current Semester',
+        weeklyGoalHours: 12,
       };
 
       onAuthSuccess(authenticatedUser);
@@ -127,8 +145,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess, onDemoLogin }
               <button
                 type="button"
                 onClick={() => {
-                  setIsLogin(true);
-                  setErrorMessage(null);
+                  setMode('login');
                 }}
                 className={`py-2 rounded-lg transition-all ${
                   isLogin
@@ -141,8 +158,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess, onDemoLogin }
               <button
                 type="button"
                 onClick={() => {
-                  setIsLogin(false);
-                  setErrorMessage(null);
+                  setMode('signup');
                 }}
                 className={`py-2 rounded-lg transition-all ${
                   !isLogin
@@ -300,7 +316,8 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess, onDemoLogin }
                     name: 'Alex Hunter (Google)',
                     email: 'alex.hunter@gmail.com',
                     avatarUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=google_user',
-                    major: 'Computer Science',
+                    targetSemester: 'Current Semester',
+                    weeklyGoalHours: 12,
                   });
                 }}
                 className="flex items-center justify-center gap-2 py-2 px-3 bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-700 hover:bg-slate-50 transition"
@@ -323,8 +340,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onAuthSuccess, onDemoLogin }
             <button
               type="button"
               onClick={() => {
-                setIsLogin(!isLogin);
-                setErrorMessage(null);
+                setMode(isLogin ? 'signup' : 'login');
               }}
               className="font-semibold text-indigo-600 hover:underline"
             >
