@@ -1,0 +1,6 @@
+{
+  "name": "Study Planner",
+  "description": "An adaptive study planning system with customizable subjects, topics, deadlines, and smart schedule generation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
