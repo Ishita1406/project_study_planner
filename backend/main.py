@@ -161,6 +161,43 @@ class DeadlineCreateRequest(BaseModel):
     priority: str = "medium"
 
 
+class TaskCreateRequest(BaseModel):
+    subjectId: int
+    topicId: int
+    scheduledDate: date
+    startTime: str
+    duration: int
+    status: str = "pending"
+    priority: str = "medium"
+    notes: Optional[str] = None
+
+
+class TaskUpdateRequest(BaseModel):
+    scheduledDate: Optional[date] = None
+    startTime: Optional[str] = None
+    duration: Optional[int] = None
+    status: Optional[str] = None
+    priority: Optional[str] = None
+    notes: Optional[str] = None
+    completedAt: Optional[datetime] = None
+
+
+class RebalanceRequest(BaseModel):
+    newDate: date
+
+
+class StudySessionCreateRequest(BaseModel):
+    taskId: Optional[int] = None
+    subjectId: int
+    topicId: int
+    startTime: datetime
+    endTime: datetime
+    duration: int
+    difficultyFeedback: str
+    confidence: int
+    notes: Optional[str] = None
+
+
 DEFAULT_WEEKLY_AVAILABILITY = {
     "monday": 2,
     "tuesday": 2,
@@ -244,6 +281,37 @@ def serialize_deadline(deadline: Dict[str, Any]) -> Dict[str, Any]:
         "dueDate": deadline["due_date"].isoformat(),
         "type": deadline["deadline_type"],
         "priority": deadline["priority"],
+    }
+
+
+def serialize_task(task: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "id": str(task["id"]),
+        "subjectId": str(task["subject_id"]),
+        "topicId": str(task["topic_id"]),
+        "scheduledDate": task["scheduled_date"].isoformat(),
+        "startTime": task["start_time"],
+        "duration": task["duration"],
+        "status": task["status"],
+        "priority": task["priority"],
+        "notes": task["notes"],
+        "completedAt": task["completed_at"].isoformat() if task["completed_at"] else None,
+    }
+
+
+def serialize_study_session(session: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "id": str(session["id"]),
+        "taskId": str(session["task_id"]) if session["task_id"] else None,
+        "subjectId": str(session["subject_id"]),
+        "topicId": str(session["topic_id"]),
+        "startTime": session["start_time"].isoformat(),
+        "endTime": session["end_time"].isoformat(),
+        "duration": session["duration"],
+        "difficultyFeedback": session["difficulty_feedback"],
+        "confidence": session["confidence"],
+        "notes": session["notes"],
+        "createdAt": session["created_at"].isoformat(),
     }
 
 
@@ -393,9 +461,43 @@ async def startup():
                 priority VARCHAR(16) NOT NULL DEFAULT 'medium'
             )
         """)
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS tasks (
+                id SERIAL PRIMARY KEY,
+                subject_id INTEGER NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+                topic_id INTEGER NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
+                scheduled_date DATE NOT NULL,
+                start_time VARCHAR(8) NOT NULL,
+                duration INTEGER NOT NULL,
+                status VARCHAR(32) NOT NULL DEFAULT 'pending',
+                priority VARCHAR(16) NOT NULL DEFAULT 'medium',
+                notes TEXT,
+                completed_at TIMESTAMPTZ
+            )
+        """)
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS study_sessions (
+                id SERIAL PRIMARY KEY,
+                task_id INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+                subject_id INTEGER NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+                topic_id INTEGER NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
+                start_time TIMESTAMPTZ NOT NULL,
+                end_time TIMESTAMPTZ NOT NULL,
+                duration INTEGER NOT NULL,
+                difficulty_feedback VARCHAR(16) NOT NULL,
+                confidence INTEGER NOT NULL,
+                notes TEXT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """)
         cur.execute("CREATE INDEX IF NOT EXISTS subjects_user_id_idx ON subjects(user_id)")
         cur.execute("CREATE INDEX IF NOT EXISTS topics_subject_id_idx ON topics(subject_id)")
         cur.execute("CREATE INDEX IF NOT EXISTS deadlines_subject_id_idx ON deadlines(subject_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS tasks_subject_id_idx ON tasks(subject_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS tasks_topic_id_idx ON tasks(topic_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS study_sessions_subject_id_idx ON study_sessions(subject_id)")
         
         conn.commit()
         print("Database migrations completed successfully.")
@@ -869,6 +971,235 @@ async def delete_api_deadline(deadline_id: int, user: Dict[str, Any] = Depends(g
         if not cur.fetchone():
             raise HTTPException(status_code=404, detail="Deadline not found")
         conn.commit()
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.get("/api/tasks")
+async def get_api_tasks(user: Dict[str, Any] = Depends(get_current_user)):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT task.*
+            FROM tasks task
+            JOIN subjects subject ON subject.id = task.subject_id
+            WHERE subject.user_id = %s
+            ORDER BY task.scheduled_date, task.start_time, task.id
+            """,
+            (user["id"],),
+        )
+        return [serialize_task(task) for task in cur.fetchall()]
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.post("/api/tasks", status_code=201)
+async def create_api_task(request: TaskCreateRequest, user: Dict[str, Any] = Depends(get_current_user)):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT subject.id
+            FROM subjects subject
+            JOIN topics topic ON topic.id = %s AND topic.subject_id = subject.id
+            WHERE subject.id = %s AND subject.user_id = %s
+            """,
+            (request.topicId, request.subjectId, user["id"]),
+        )
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="Subject or topic not found")
+        cur.execute(
+            """
+            INSERT INTO tasks (subject_id, topic_id, scheduled_date, start_time, duration, status, priority, notes)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING *
+            """,
+            (
+                request.subjectId, request.topicId, request.scheduledDate, request.startTime,
+                request.duration, request.status, request.priority, request.notes,
+            ),
+        )
+        task = cur.fetchone()
+        conn.commit()
+        return serialize_task(task)
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.patch("/api/tasks/{task_id}")
+async def update_api_task(
+    task_id: int, request: TaskUpdateRequest, user: Dict[str, Any] = Depends(get_current_user)
+):
+    updates = request.model_dump(exclude_unset=True)
+    columns = {
+        "scheduledDate": "scheduled_date", "startTime": "start_time", "duration": "duration",
+        "status": "status", "priority": "priority", "notes": "notes", "completedAt": "completed_at",
+    }
+    if not updates:
+        raise HTTPException(status_code=422, detail="At least one field is required")
+    if updates.get("status") == "completed" and "completedAt" not in updates:
+        updates["completedAt"] = datetime.utcnow()
+
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        assignments = ", ".join(f"{columns[key]} = %s" for key in updates)
+        cur.execute(
+            f"""
+            UPDATE tasks AS task SET {assignments}
+            FROM subjects AS subject
+            WHERE task.id = %s AND task.subject_id = subject.id AND subject.user_id = %s
+            RETURNING task.*
+            """,
+            [*updates.values(), task_id, user["id"]],
+        )
+        task = cur.fetchone()
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        conn.commit()
+        return serialize_task(task)
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.delete("/api/tasks/{task_id}", status_code=204)
+async def delete_api_task(task_id: int, user: Dict[str, Any] = Depends(get_current_user)):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            DELETE FROM tasks AS task
+            USING subjects AS subject
+            WHERE task.id = %s AND task.subject_id = subject.id AND subject.user_id = %s
+            RETURNING task.id
+            """,
+            (task_id, user["id"]),
+        )
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="Task not found")
+        conn.commit()
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.post("/api/tasks/{task_id}/rebalance")
+async def rebalance_api_task(
+    task_id: int, request: RebalanceRequest, user: Dict[str, Any] = Depends(get_current_user)
+):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT task.*
+            FROM tasks task JOIN subjects subject ON subject.id = task.subject_id
+            WHERE task.id = %s AND subject.user_id = %s
+            """,
+            (task_id, user["id"]),
+        )
+        target = cur.fetchone()
+        if not target:
+            raise HTTPException(status_code=404, detail="Task not found")
+        cur.execute("UPDATE tasks SET scheduled_date = %s WHERE id = %s", (request.newDate, task_id))
+        cur.execute(
+            """
+            SELECT id FROM tasks
+            WHERE subject_id = %s AND id != %s AND status = 'pending' AND scheduled_date >= %s
+            ORDER BY scheduled_date, start_time, id
+            """,
+            (target["subject_id"], task_id, request.newDate),
+        )
+        for index, task in enumerate(cur.fetchall()):
+            cur.execute(
+                "UPDATE tasks SET scheduled_date = %s WHERE id = %s",
+                (request.newDate + timedelta(days=(index + 1) // 3), task["id"]),
+            )
+        cur.execute(
+            """
+            SELECT task.* FROM tasks task JOIN subjects subject ON subject.id = task.subject_id
+            WHERE subject.user_id = %s ORDER BY task.scheduled_date, task.start_time, task.id
+            """,
+            (user["id"],),
+        )
+        tasks = [serialize_task(task) for task in cur.fetchall()]
+        conn.commit()
+        return tasks
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.get("/api/study-sessions")
+async def get_api_study_sessions(user: Dict[str, Any] = Depends(get_current_user)):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT session.* FROM study_sessions session
+            JOIN subjects subject ON subject.id = session.subject_id
+            WHERE subject.user_id = %s ORDER BY session.start_time DESC
+            """,
+            (user["id"],),
+        )
+        return [serialize_study_session(session) for session in cur.fetchall()]
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.post("/api/study-sessions", status_code=201)
+async def create_api_study_session(
+    request: StudySessionCreateRequest, user: Dict[str, Any] = Depends(get_current_user)
+):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT subject.id, topic.confidence AS topic_confidence
+            FROM subjects subject JOIN topics topic ON topic.id = %s AND topic.subject_id = subject.id
+            WHERE subject.id = %s AND subject.user_id = %s
+            """,
+            (request.topicId, request.subjectId, user["id"]),
+        )
+        topic = cur.fetchone()
+        if not topic:
+            raise HTTPException(status_code=404, detail="Subject or topic not found")
+        if request.taskId:
+            cur.execute(
+                """
+                SELECT task.id FROM tasks task JOIN subjects subject ON subject.id = task.subject_id
+                WHERE task.id = %s AND task.subject_id = %s AND subject.user_id = %s
+                """,
+                (request.taskId, request.subjectId, user["id"]),
+            )
+            if not cur.fetchone():
+                raise HTTPException(status_code=404, detail="Task not found")
+        cur.execute(
+            """
+            INSERT INTO study_sessions (task_id, subject_id, topic_id, start_time, end_time, duration, difficulty_feedback, confidence, notes)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *
+            """,
+            (request.taskId, request.subjectId, request.topicId, request.startTime, request.endTime,
+             request.duration, request.difficultyFeedback, request.confidence, request.notes),
+        )
+        session = cur.fetchone()
+        if request.taskId:
+            cur.execute("UPDATE tasks SET status = 'completed', completed_at = %s WHERE id = %s", (session["created_at"], request.taskId))
+        confidence = max(0, min(100, round((topic["topic_confidence"] + request.confidence) / 2)))
+        cur.execute("UPDATE topics SET confidence = %s, completed = completed OR %s WHERE id = %s", (confidence, confidence >= 75, request.topicId))
+        conn.commit()
+        return serialize_study_session(session)
     finally:
         cur.close()
         conn.close()
