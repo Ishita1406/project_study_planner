@@ -198,6 +198,18 @@ class StudySessionCreateRequest(BaseModel):
     notes: Optional[str] = None
 
 
+class PlanGenerationRequest(BaseModel):
+    availabilityMode: str
+    dailyHours: float
+    weeklyAvailability: Dict[str, float]
+    prioritizedSubjectIds: List[int] = []
+    priorities: List[str] = []
+    preferredTime: str = "flexible"
+    maxContinuousMinutes: int = 60
+    breakMinutes: int = 10
+    additionalNotes: Optional[str] = None
+
+
 DEFAULT_WEEKLY_AVAILABILITY = {
     "monday": 2,
     "tuesday": 2,
@@ -312,6 +324,23 @@ def serialize_study_session(session: Dict[str, Any]) -> Dict[str, Any]:
         "confidence": session["confidence"],
         "notes": session["notes"],
         "createdAt": session["created_at"].isoformat(),
+    }
+
+
+def serialize_plan(plan: Dict[str, Any]) -> Dict[str, Any]:
+    params = plan["params"]
+    items = plan["items"]
+    if isinstance(params, str):
+        params = json.loads(params)
+    if isinstance(items, str):
+        items = json.loads(items)
+    return {
+        "id": str(plan["id"]),
+        "userId": str(plan["user_id"]),
+        "generatedAt": plan["generated_at"].isoformat(),
+        "status": plan["status"],
+        "params": params,
+        "items": items,
     }
 
 
@@ -492,12 +521,24 @@ async def startup():
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )
         """)
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS study_plans (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                status VARCHAR(16) NOT NULL DEFAULT 'draft',
+                params JSONB NOT NULL,
+                items JSONB NOT NULL
+            )
+        """)
         cur.execute("CREATE INDEX IF NOT EXISTS subjects_user_id_idx ON subjects(user_id)")
         cur.execute("CREATE INDEX IF NOT EXISTS topics_subject_id_idx ON topics(subject_id)")
         cur.execute("CREATE INDEX IF NOT EXISTS deadlines_subject_id_idx ON deadlines(subject_id)")
         cur.execute("CREATE INDEX IF NOT EXISTS tasks_subject_id_idx ON tasks(subject_id)")
         cur.execute("CREATE INDEX IF NOT EXISTS tasks_topic_id_idx ON tasks(topic_id)")
         cur.execute("CREATE INDEX IF NOT EXISTS study_sessions_subject_id_idx ON study_sessions(subject_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS study_plans_user_id_idx ON study_plans(user_id)")
         
         conn.commit()
         print("Database migrations completed successfully.")
@@ -1200,6 +1241,138 @@ async def create_api_study_session(
         cur.execute("UPDATE topics SET confidence = %s, completed = completed OR %s WHERE id = %s", (confidence, confidence >= 75, request.topicId))
         conn.commit()
         return serialize_study_session(session)
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.get("/api/plans")
+async def get_api_plans(user: Dict[str, Any] = Depends(get_current_user)):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT * FROM study_plans WHERE user_id = %s ORDER BY generated_at DESC", (user["id"],))
+        return [serialize_plan(plan) for plan in cur.fetchall()]
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.post("/api/plans/generate", status_code=201)
+async def generate_api_plan(
+    request: PlanGenerationRequest, user: Dict[str, Any] = Depends(get_current_user)
+):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        query = """
+            SELECT subject.id AS subject_id, subject.name AS subject_name, subject.priority,
+                   topic.id AS topic_id, topic.name AS topic_name, topic.difficulty,
+                   topic.confidence, topic.estimated_minutes, MIN(deadline.due_date) AS deadline
+            FROM subjects subject
+            JOIN topics topic ON topic.subject_id = subject.id
+            LEFT JOIN deadlines deadline ON deadline.subject_id = subject.id
+            WHERE subject.user_id = %s AND topic.completed = FALSE
+        """
+        values: List[Any] = [user["id"]]
+        if request.prioritizedSubjectIds:
+            query += " AND subject.id = ANY(%s)"
+            values.append(request.prioritizedSubjectIds)
+        query += " GROUP BY subject.id, topic.id ORDER BY subject.id, topic.id"
+        cur.execute(query, values)
+        candidates = cur.fetchall()
+        if not candidates:
+            raise HTTPException(status_code=400, detail="No incomplete topics are available for planning")
+
+        today = date.today()
+        def weight(candidate: Dict[str, Any]) -> int:
+            score = 40 + max(0, 60 - candidate["confidence"])
+            if candidate["difficulty"] == "hard":
+                score += 30
+            elif candidate["difficulty"] == "medium":
+                score += 15
+            if candidate["deadline"] and "deadlines" in request.priorities:
+                score += max(0, 40 - (candidate["deadline"] - today).days * 2)
+            return score
+
+        candidates.sort(key=weight, reverse=True)
+        starts = {
+            "morning": ["09:00", "10:30", "12:00"],
+            "afternoon": ["13:30", "15:00", "16:30"],
+            "evening": ["17:00", "18:30", "20:00"],
+            "flexible": ["13:30", "15:00", "16:30"],
+        }[request.preferredTime]
+        items = []
+        topic_cursor = 0
+        for offset in range(7):
+            scheduled_date = today + timedelta(days=offset)
+            day_key = scheduled_date.strftime("%A").lower()
+            hours = request.weeklyAvailability.get(day_key, 0) if request.availabilityMode == "custom" else request.dailyHours
+            remaining = int(hours * 60)
+            for start_time in starts:
+                if remaining < 30:
+                    break
+                candidate = candidates[topic_cursor % len(candidates)]
+                topic_cursor += 1
+                duration = min(request.maxContinuousMinutes, candidate["estimated_minutes"], remaining)
+                items.append({
+                    "id": f"gpi_{secrets.token_hex(8)}",
+                    "day": scheduled_date.strftime("%A"),
+                    "date": scheduled_date.isoformat(),
+                    "startTime": start_time,
+                    "subjectId": str(candidate["subject_id"]),
+                    "topicId": str(candidate["topic_id"]),
+                    "subjectName": candidate["subject_name"],
+                    "topicName": candidate["topic_name"],
+                    "durationMinutes": duration,
+                    "difficulty": candidate["difficulty"],
+                    "priority": candidate["priority"],
+                    "reason": "Scheduled from incomplete topics and your availability.",
+                })
+                remaining -= duration + request.breakMinutes
+        params = request.model_dump()
+        cur.execute(
+            "INSERT INTO study_plans (user_id, params, items) VALUES (%s, %s::jsonb, %s::jsonb) RETURNING *",
+            (user["id"], json.dumps(params), json.dumps(items)),
+        )
+        plan = cur.fetchone()
+        conn.commit()
+        return serialize_plan(plan)
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.post("/api/plans/{plan_id}/accept", status_code=204)
+async def accept_api_plan(plan_id: int, user: Dict[str, Any] = Depends(get_current_user)):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT * FROM study_plans WHERE id = %s AND user_id = %s", (plan_id, user["id"]))
+        plan = cur.fetchone()
+        if not plan:
+            raise HTTPException(status_code=404, detail="Plan not found")
+        if plan["status"] != "draft":
+            raise HTTPException(status_code=409, detail="Only draft plans can be accepted")
+        items = plan["items"] if not isinstance(plan["items"], str) else json.loads(plan["items"])
+        cur.execute(
+            """
+            DELETE FROM tasks task USING subjects subject
+            WHERE task.subject_id = subject.id AND subject.user_id = %s AND task.status != 'completed'
+            """,
+            (user["id"],),
+        )
+        for item in items:
+            cur.execute(
+                """
+                INSERT INTO tasks (subject_id, topic_id, scheduled_date, start_time, duration, status, priority, notes)
+                VALUES (%s, %s, %s, %s, %s, 'pending', %s, %s)
+                """,
+                (int(item["subjectId"]), int(item["topicId"]), item["date"], item["startTime"],
+                 item["durationMinutes"], item["priority"], f"Generated by Study Planner: {item['reason']}"),
+            )
+        cur.execute("UPDATE study_plans SET status = 'accepted' WHERE id = %s", (plan_id,))
+        conn.commit()
     finally:
         cur.close()
         conn.close()
