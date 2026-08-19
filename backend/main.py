@@ -110,6 +110,57 @@ class PreferencesUpdateRequest(BaseModel):
     googleCalendarSync: Optional[bool] = None
 
 
+class SubjectCreateRequest(BaseModel):
+    name: str
+    code: Optional[str] = None
+    description: Optional[str] = None
+    deadline: Optional[date] = None
+    examName: Optional[str] = None
+    difficulty: str = "medium"
+    confidence: int = 0
+    priority: str = "medium"
+    color: str = "#3b82f6"
+
+
+class SubjectUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    code: Optional[str] = None
+    description: Optional[str] = None
+    deadline: Optional[date] = None
+    examName: Optional[str] = None
+    difficulty: Optional[str] = None
+    confidence: Optional[int] = None
+    priority: Optional[str] = None
+    color: Optional[str] = None
+
+
+class TopicCreateRequest(BaseModel):
+    subjectId: int
+    name: str
+    difficulty: str = "medium"
+    confidence: int = 0
+    estimatedMinutes: int = 60
+    completed: bool = False
+    order: int = 0
+
+
+class TopicUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    difficulty: Optional[str] = None
+    confidence: Optional[int] = None
+    estimatedMinutes: Optional[int] = None
+    completed: Optional[bool] = None
+    order: Optional[int] = None
+
+
+class DeadlineCreateRequest(BaseModel):
+    subjectId: int
+    title: str
+    dueDate: date
+    type: str
+    priority: str = "medium"
+
+
 DEFAULT_WEEKLY_AVAILABILITY = {
     "monday": 2,
     "tuesday": 2,
@@ -153,6 +204,46 @@ def serialize_preferences(preferences: Dict[str, Any]) -> Dict[str, Any]:
         "notifyReminders": preferences["notify_reminders"],
         "notifyDeadlines": preferences["notify_deadlines"],
         "googleCalendarSync": preferences["google_calendar_sync"],
+    }
+
+
+def serialize_subject(subject: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "id": str(subject["id"]),
+        "name": subject["name"],
+        "code": subject["code"],
+        "description": subject["description"],
+        "deadline": subject["deadline"].isoformat() if subject["deadline"] else None,
+        "examName": subject["exam_name"],
+        "difficulty": subject["difficulty"],
+        "confidence": subject["confidence"],
+        "priority": subject["priority"],
+        "color": subject["color"],
+        "createdAt": subject["created_at"].isoformat(),
+    }
+
+
+def serialize_topic(topic: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "id": str(topic["id"]),
+        "subjectId": str(topic["subject_id"]),
+        "name": topic["name"],
+        "difficulty": topic["difficulty"],
+        "confidence": topic["confidence"],
+        "estimatedMinutes": topic["estimated_minutes"],
+        "completed": topic["completed"],
+        "order": topic["topic_order"],
+    }
+
+
+def serialize_deadline(deadline: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "id": str(deadline["id"]),
+        "subjectId": str(deadline["subject_id"]),
+        "title": deadline["title"],
+        "dueDate": deadline["due_date"].isoformat(),
+        "type": deadline["deadline_type"],
+        "priority": deadline["priority"],
     }
 
 
@@ -267,6 +358,44 @@ async def startup():
         # Check and add google_event_id to daily_tasks
         cur.execute("ALTER TABLE daily_tasks ADD COLUMN IF NOT EXISTS google_event_id VARCHAR(255)")
         print("Checked 'google_event_id' column")
+
+        cur.execute("ALTER TABLE subjects ALTER COLUMN deadline DROP NOT NULL")
+        cur.execute("ALTER TABLE subjects ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id) ON DELETE CASCADE")
+        cur.execute("ALTER TABLE subjects ADD COLUMN IF NOT EXISTS code VARCHAR(64)")
+        cur.execute("ALTER TABLE subjects ADD COLUMN IF NOT EXISTS description TEXT")
+        cur.execute("ALTER TABLE subjects ADD COLUMN IF NOT EXISTS exam_name VARCHAR(255)")
+        cur.execute("ALTER TABLE subjects ADD COLUMN IF NOT EXISTS difficulty VARCHAR(16) NOT NULL DEFAULT 'medium'")
+        cur.execute("ALTER TABLE subjects ADD COLUMN IF NOT EXISTS confidence INTEGER NOT NULL DEFAULT 0")
+        cur.execute("ALTER TABLE subjects ADD COLUMN IF NOT EXISTS priority VARCHAR(16) NOT NULL DEFAULT 'medium'")
+        cur.execute("ALTER TABLE subjects ADD COLUMN IF NOT EXISTS color VARCHAR(32) NOT NULL DEFAULT '#3b82f6'")
+        cur.execute("ALTER TABLE subjects ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()")
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS topics (
+                id SERIAL PRIMARY KEY,
+                subject_id INTEGER NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+                name VARCHAR(255) NOT NULL,
+                difficulty VARCHAR(16) NOT NULL DEFAULT 'medium',
+                confidence INTEGER NOT NULL DEFAULT 0,
+                estimated_minutes INTEGER NOT NULL DEFAULT 60,
+                completed BOOLEAN NOT NULL DEFAULT FALSE,
+                topic_order INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS deadlines (
+                id SERIAL PRIMARY KEY,
+                subject_id INTEGER NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+                title VARCHAR(255) NOT NULL,
+                due_date DATE NOT NULL,
+                deadline_type VARCHAR(32) NOT NULL,
+                priority VARCHAR(16) NOT NULL DEFAULT 'medium'
+            )
+        """)
+        cur.execute("CREATE INDEX IF NOT EXISTS subjects_user_id_idx ON subjects(user_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS topics_subject_id_idx ON topics(subject_id)")
+        cur.execute("CREATE INDEX IF NOT EXISTS deadlines_subject_id_idx ON deadlines(subject_id)")
         
         conn.commit()
         print("Database migrations completed successfully.")
@@ -438,6 +567,308 @@ async def update_preferences(
         preferences = cur.fetchone()
         conn.commit()
         return serialize_preferences(preferences)
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.get("/api/subjects")
+async def get_api_subjects(user: Dict[str, Any] = Depends(get_current_user)):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT * FROM subjects WHERE user_id = %s ORDER BY created_at", (user["id"],))
+        return [serialize_subject(subject) for subject in cur.fetchall()]
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.post("/api/subjects", status_code=201)
+async def create_api_subject(
+    request: SubjectCreateRequest, user: Dict[str, Any] = Depends(get_current_user)
+):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            INSERT INTO subjects (user_id, name, topics, deadline, code, description, exam_name, difficulty, confidence, priority, color)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING *
+            """,
+            (
+                user["id"],
+                request.name,
+                [],
+                request.deadline,
+                request.code,
+                request.description,
+                request.examName,
+                request.difficulty,
+                request.confidence,
+                request.priority,
+                request.color,
+            ),
+        )
+        subject = cur.fetchone()
+        if request.deadline:
+            cur.execute(
+                """
+                INSERT INTO deadlines (subject_id, title, due_date, deadline_type, priority)
+                VALUES (%s, %s, %s, 'exam', %s)
+                """,
+                (
+                    subject["id"],
+                    request.examName or f"{request.name} Assessment",
+                    request.deadline,
+                    request.priority,
+                ),
+            )
+        conn.commit()
+        return serialize_subject(subject)
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.patch("/api/subjects/{subject_id}")
+async def update_api_subject(
+    subject_id: int,
+    request: SubjectUpdateRequest,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    updates = request.model_dump(exclude_unset=True)
+    columns = {
+        "name": "name",
+        "code": "code",
+        "description": "description",
+        "deadline": "deadline",
+        "examName": "exam_name",
+        "difficulty": "difficulty",
+        "confidence": "confidence",
+        "priority": "priority",
+        "color": "color",
+    }
+    if not updates:
+        raise HTTPException(status_code=422, detail="At least one field is required")
+
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        assignments = ", ".join(f"{columns[key]} = %s" for key in updates)
+        cur.execute(
+            f"UPDATE subjects SET {assignments} WHERE id = %s AND user_id = %s RETURNING *",
+            [*updates.values(), subject_id, user["id"]],
+        )
+        subject = cur.fetchone()
+        if not subject:
+            raise HTTPException(status_code=404, detail="Subject not found")
+        conn.commit()
+        return serialize_subject(subject)
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.delete("/api/subjects/{subject_id}", status_code=204)
+async def delete_api_subject(subject_id: int, user: Dict[str, Any] = Depends(get_current_user)):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("DELETE FROM subjects WHERE id = %s AND user_id = %s RETURNING id", (subject_id, user["id"]))
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="Subject not found")
+        conn.commit()
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.get("/api/topics")
+async def get_api_topics(
+    subjectId: Optional[int] = None, user: Dict[str, Any] = Depends(get_current_user)
+):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        query = """
+            SELECT topic.*
+            FROM topics topic
+            JOIN subjects subject ON subject.id = topic.subject_id
+            WHERE subject.user_id = %s
+        """
+        values: List[Any] = [user["id"]]
+        if subjectId is not None:
+            query += " AND topic.subject_id = %s"
+            values.append(subjectId)
+        query += " ORDER BY topic.subject_id, topic.topic_order, topic.id"
+        cur.execute(query, values)
+        return [serialize_topic(topic) for topic in cur.fetchall()]
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.post("/api/topics", status_code=201)
+async def create_api_topic(request: TopicCreateRequest, user: Dict[str, Any] = Depends(get_current_user)):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT id FROM subjects WHERE id = %s AND user_id = %s", (request.subjectId, user["id"]))
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="Subject not found")
+        cur.execute(
+            """
+            INSERT INTO topics (subject_id, name, difficulty, confidence, estimated_minutes, completed, topic_order)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING *
+            """,
+            (
+                request.subjectId,
+                request.name,
+                request.difficulty,
+                request.confidence,
+                request.estimatedMinutes,
+                request.completed,
+                request.order,
+            ),
+        )
+        topic = cur.fetchone()
+        conn.commit()
+        return serialize_topic(topic)
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.patch("/api/topics/{topic_id}")
+async def update_api_topic(
+    topic_id: int,
+    request: TopicUpdateRequest,
+    user: Dict[str, Any] = Depends(get_current_user),
+):
+    updates = request.model_dump(exclude_unset=True)
+    columns = {
+        "name": "name",
+        "difficulty": "difficulty",
+        "confidence": "confidence",
+        "estimatedMinutes": "estimated_minutes",
+        "completed": "completed",
+        "order": "topic_order",
+    }
+    if not updates:
+        raise HTTPException(status_code=422, detail="At least one field is required")
+
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        assignments = ", ".join(f"{columns[key]} = %s" for key in updates)
+        cur.execute(
+            f"""
+            UPDATE topics AS topic SET {assignments}
+            FROM subjects AS subject
+            WHERE topic.id = %s AND topic.subject_id = subject.id AND subject.user_id = %s
+            RETURNING topic.*
+            """,
+            [*updates.values(), topic_id, user["id"]],
+        )
+        topic = cur.fetchone()
+        if not topic:
+            raise HTTPException(status_code=404, detail="Topic not found")
+        conn.commit()
+        return serialize_topic(topic)
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.delete("/api/topics/{topic_id}", status_code=204)
+async def delete_api_topic(topic_id: int, user: Dict[str, Any] = Depends(get_current_user)):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            DELETE FROM topics AS topic
+            USING subjects AS subject
+            WHERE topic.id = %s AND topic.subject_id = subject.id AND subject.user_id = %s
+            RETURNING topic.id
+            """,
+            (topic_id, user["id"]),
+        )
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="Topic not found")
+        conn.commit()
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.get("/api/deadlines")
+async def get_api_deadlines(user: Dict[str, Any] = Depends(get_current_user)):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT deadline.*
+            FROM deadlines deadline
+            JOIN subjects subject ON subject.id = deadline.subject_id
+            WHERE subject.user_id = %s
+            ORDER BY deadline.due_date, deadline.id
+            """,
+            (user["id"],),
+        )
+        return [serialize_deadline(deadline) for deadline in cur.fetchall()]
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.post("/api/deadlines", status_code=201)
+async def create_api_deadline(
+    request: DeadlineCreateRequest, user: Dict[str, Any] = Depends(get_current_user)
+):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("SELECT id FROM subjects WHERE id = %s AND user_id = %s", (request.subjectId, user["id"]))
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="Subject not found")
+        cur.execute(
+            """
+            INSERT INTO deadlines (subject_id, title, due_date, deadline_type, priority)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING *
+            """,
+            (request.subjectId, request.title, request.dueDate, request.type, request.priority),
+        )
+        deadline = cur.fetchone()
+        conn.commit()
+        return serialize_deadline(deadline)
+    finally:
+        cur.close()
+        conn.close()
+
+
+@app.delete("/api/deadlines/{deadline_id}", status_code=204)
+async def delete_api_deadline(deadline_id: int, user: Dict[str, Any] = Depends(get_current_user)):
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """
+            DELETE FROM deadlines AS deadline
+            USING subjects AS subject
+            WHERE deadline.id = %s AND deadline.subject_id = subject.id AND subject.user_id = %s
+            RETURNING deadline.id
+            """,
+            (deadline_id, user["id"]),
+        )
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="Deadline not found")
+        conn.commit()
     finally:
         cur.close()
         conn.close()
