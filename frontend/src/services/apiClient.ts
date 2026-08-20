@@ -70,30 +70,30 @@ export const apiClient = {
   },
 
   // ==================== USER & PREFERENCES ====================
+  // GET /api/user
   async getUser(): Promise<User> {
-    await delay(30);
-    return StorageService.getUser();
+    return apiFetch<User>('/user');
   },
 
+  // PATCH /api/user
   async updateUser(user: Partial<User>): Promise<User> {
-    await delay(50);
-    const current = StorageService.getUser();
-    const updated = { ...current, ...user };
-    StorageService.saveUser(updated);
-    return updated;
+    return apiFetch<User>('/user', {
+      method: 'PATCH',
+      body: JSON.stringify(user),
+    });
   },
 
+  // GET /api/preferences
   async getPreferences(): Promise<UserPreferences> {
-    await delay(30);
-    return StorageService.getPreferences();
+    return apiFetch<UserPreferences>('/preferences');
   },
 
+  // PATCH /api/preferences
   async updatePreferences(prefs: Partial<UserPreferences>): Promise<UserPreferences> {
-    await delay(50);
-    const current = StorageService.getPreferences();
-    const updated = { ...current, ...prefs };
-    StorageService.savePreferences(updated);
-    return updated;
+    return apiFetch<UserPreferences>('/preferences', {
+      method: 'PATCH',
+      body: JSON.stringify(prefs),
+    });
   },
 
   // ==================== SUBJECTS ====================

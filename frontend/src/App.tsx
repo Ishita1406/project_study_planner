@@ -193,6 +193,8 @@ export default function App() {
   }, [routedView, authMode, isAuthenticated, navigate]);
 
   useEffect(() => {
+    if (!isAuthenticated) return;
+
     refreshAllData();
 
     // Listen to local persistence updates
@@ -202,7 +204,7 @@ export default function App() {
 
     window.addEventListener('study-planner-data-changed', handleStorageChange);
     return () => window.removeEventListener('study-planner-data-changed', handleStorageChange);
-  }, [refreshAllData]);
+  }, [isAuthenticated, refreshAllData]);
 
   // Handlers for User & Preferences
   const handleUpdateUser = async (updated: Partial<User>) => {
