@@ -128,7 +128,7 @@ class PlanGenerationRequest(BaseModel):
     availabilityMode: str
     dailyHours: float
     weeklyAvailability: Dict[str, float]
-    prioritizedSubjectIds: List[int] = []
+    prioritizedSubjectIds: List[str] = []
     priorities: List[str] = []
     preferredTime: str = "flexible"
     maxContinuousMinutes: int = 60
