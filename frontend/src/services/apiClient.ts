@@ -99,253 +99,130 @@ export const apiClient = {
   // ==================== SUBJECTS ====================
   // GET /api/subjects
   async getSubjects(): Promise<Subject[]> {
-    await delay(40);
-    return StorageService.getSubjects();
+    return apiFetch<Subject[]>('/subjects');
   },
 
   // POST /api/subjects
   async createSubject(data: Omit<Subject, 'id' | 'createdAt'>): Promise<Subject> {
-    await delay(60);
-    const subjects = StorageService.getSubjects();
-    const newSubject: Subject = {
-      ...data,
-      id: generateId('sub'),
-      createdAt: new Date().toISOString(),
-    };
-    subjects.push(newSubject);
-    StorageService.saveSubjects(subjects);
-
-    // If deadline was provided with subject, also record in deadlines table
-    if (data.deadline) {
-      const deadlines = StorageService.getDeadlines();
-      deadlines.push({
-        id: generateId('ddl'),
-        subjectId: newSubject.id,
-        title: data.examName || `${data.name} Assessment`,
-        dueDate: data.deadline,
-        type: 'exam',
-        priority: data.priority,
-      });
-      StorageService.saveDeadlines(deadlines);
-    }
-
-    return newSubject;
+    // Backend auto-creates a matching deadline row when `deadline` is set.
+    return apiFetch<Subject>('/subjects', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
   },
 
-  // PUT /api/subjects/:id
+  // PATCH /api/subjects/:id
   async updateSubject(id: string, data: Partial<Subject>): Promise<Subject> {
-    await delay(50);
-    const subjects = StorageService.getSubjects();
-    const index = subjects.findIndex((s) => s.id === id);
-    if (index === -1) throw new Error('Subject not found');
-    const updated = { ...subjects[index], ...data };
-    subjects[index] = updated;
-    StorageService.saveSubjects(subjects);
-    return updated;
+    return apiFetch<Subject>(`/subjects/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
   },
 
   // DELETE /api/subjects/:id
   async deleteSubject(id: string): Promise<void> {
-    await delay(60);
-    const subjects = StorageService.getSubjects().filter((s) => s.id !== id);
-    StorageService.saveSubjects(subjects);
-
-    // Cascade delete topics and tasks
-    const topics = StorageService.getTopics().filter((t) => t.subjectId !== id);
-    StorageService.saveTopics(topics);
-
-    const tasks = StorageService.getTasks().filter((t) => t.subjectId !== id);
-    StorageService.saveTasks(tasks);
-
-    const deadlines = StorageService.getDeadlines().filter((d) => d.subjectId !== id);
-    StorageService.saveDeadlines(deadlines);
+    // Backend cascades the delete to topics, tasks, and deadlines.
+    await apiFetch<void>(`/subjects/${id}`, { method: 'DELETE' });
   },
 
   // ==================== TOPICS ====================
   // GET /api/topics?subjectId=...
   async getTopics(subjectId?: string): Promise<Topic[]> {
-    await delay(30);
-    const topics = StorageService.getTopics();
-    if (subjectId) {
-      return topics.filter((t) => t.subjectId === subjectId);
-    }
-    return topics;
+    const query = subjectId ? `?subjectId=${encodeURIComponent(subjectId)}` : '';
+    return apiFetch<Topic[]>(`/topics${query}`);
   },
 
   // POST /api/topics
   async createTopic(data: Omit<Topic, 'id'>): Promise<Topic> {
-    await delay(50);
-    const topics = StorageService.getTopics();
-    const newTopic: Topic = {
-      ...data,
-      id: generateId('top'),
-    };
-    topics.push(newTopic);
-    StorageService.saveTopics(topics);
-    return newTopic;
+    return apiFetch<Topic>('/topics', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
   },
 
-  // PUT /api/topics/:id
+  // PATCH /api/topics/:id
   async updateTopic(id: string, data: Partial<Topic>): Promise<Topic> {
-    await delay(40);
-    const topics = StorageService.getTopics();
-    const index = topics.findIndex((t) => t.id === id);
-    if (index === -1) throw new Error('Topic not found');
-    const updated = { ...topics[index], ...data };
-    topics[index] = updated;
-    StorageService.saveTopics(topics);
-    return updated;
+    return apiFetch<Topic>(`/topics/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
   },
 
   // DELETE /api/topics/:id
   async deleteTopic(id: string): Promise<void> {
-    await delay(40);
-    const topics = StorageService.getTopics().filter((t) => t.id !== id);
-    StorageService.saveTopics(topics);
-
-    const tasks = StorageService.getTasks().filter((t) => t.topicId !== id);
-    StorageService.saveTasks(tasks);
+    // Backend cascades the delete to any tasks referencing this topic.
+    await apiFetch<void>(`/topics/${id}`, { method: 'DELETE' });
   },
 
   // ==================== TASKS ====================
   // GET /api/tasks
   async getTasks(): Promise<Task[]> {
-    await delay(30);
-    return StorageService.getTasks();
+    return apiFetch<Task[]>('/tasks');
   },
 
   // POST /api/tasks
   async createTask(data: Omit<Task, 'id'>): Promise<Task> {
-    await delay(50);
-    const tasks = StorageService.getTasks();
-    const newTask: Task = {
-      ...data,
-      id: generateId('tsk'),
-    };
-    tasks.push(newTask);
-    StorageService.saveTasks(tasks);
-    return newTask;
+    return apiFetch<Task>('/tasks', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
   },
 
-  // PUT /api/tasks/:id
+  // PATCH /api/tasks/:id
   async updateTask(id: string, data: Partial<Task>): Promise<Task> {
-    await delay(40);
-    const tasks = StorageService.getTasks();
-    const index = tasks.findIndex((t) => t.id === id);
-    if (index === -1) throw new Error('Task not found');
-    const updated = { ...tasks[index], ...data };
-    tasks[index] = updated;
-    StorageService.saveTasks(tasks);
-    return updated;
+    return apiFetch<Task>(`/tasks/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
   },
 
   // DELETE /api/tasks/:id
   async deleteTask(id: string): Promise<void> {
-    await delay(40);
-    const tasks = StorageService.getTasks().filter((t) => t.id !== id);
-    StorageService.saveTasks(tasks);
+    await apiFetch<void>(`/tasks/${id}`, { method: 'DELETE' });
   },
 
-  // Rebalance remaining plan tasks
+  // POST /api/tasks/:id/rebalance — moves the task and shifts subsequent
+  // pending tasks for the same subject; returns the full refreshed task list.
   async rebalancePlan(movedTaskId: string, newDate: string): Promise<Task[]> {
-    await delay(350); // simulate rebalancing algorithm
-    const tasks = StorageService.getTasks();
-    const targetTask = tasks.find((t) => t.id === movedTaskId);
-    if (!targetTask) return tasks;
-
-    // Update target task
-    targetTask.scheduledDate = newDate;
-
-    // Shift any subsequent pending tasks to prevent overlapping
-    const pendingFutureTasks = tasks.filter(
-      (t) => t.id !== movedTaskId && t.status === 'pending' && t.scheduledDate >= newDate
-    );
-
-    // Spread tasks across available days
-    pendingFutureTasks.forEach((task, idx) => {
-      const d = new Date(newDate);
-      d.setDate(d.getDate() + Math.floor((idx + 1) / 3));
-      task.scheduledDate = d.toISOString().split('T')[0];
+    return apiFetch<Task[]>(`/tasks/${movedTaskId}/rebalance`, {
+      method: 'POST',
+      body: JSON.stringify({ newDate }),
     });
-
-    StorageService.saveTasks(tasks);
-    return tasks;
   },
 
   // ==================== DEADLINES ====================
   // GET /api/deadlines
   async getDeadlines(): Promise<Deadline[]> {
-    await delay(30);
-    return StorageService.getDeadlines();
+    return apiFetch<Deadline[]>('/deadlines');
   },
 
   // POST /api/deadlines
   async createDeadline(data: Omit<Deadline, 'id'>): Promise<Deadline> {
-    await delay(50);
-    const deadlines = StorageService.getDeadlines();
-    const newDeadline: Deadline = {
-      ...data,
-      id: generateId('ddl'),
-    };
-    deadlines.push(newDeadline);
-    StorageService.saveDeadlines(deadlines);
-    return newDeadline;
+    return apiFetch<Deadline>('/deadlines', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
   },
 
   // DELETE /api/deadlines/:id
   async deleteDeadline(id: string): Promise<void> {
-    await delay(40);
-    const deadlines = StorageService.getDeadlines().filter((d) => d.id !== id);
-    StorageService.saveDeadlines(deadlines);
+    await apiFetch<void>(`/deadlines/${id}`, { method: 'DELETE' });
   },
 
   // ==================== STUDY SESSIONS ====================
   // GET /api/study-sessions
   async getStudySessions(): Promise<StudySession[]> {
-    await delay(30);
-    return StorageService.getSessions();
+    return apiFetch<StudySession[]>('/study-sessions');
   },
 
   // POST /api/study-sessions
+  // Backend also marks the linked task completed and folds the feedback into
+  // the topic's rolling confidence score, so no client-side bookkeeping needed.
   async createStudySession(data: Omit<StudySession, 'id' | 'createdAt'>): Promise<StudySession> {
-    await delay(60);
-    const sessions = StorageService.getSessions();
-    const newSession: StudySession = {
-      ...data,
-      id: generateId('ses'),
-      createdAt: new Date().toISOString(),
-    };
-    sessions.push(newSession);
-    StorageService.saveSessions(sessions);
-
-    // If associated with a task, mark task completed
-    if (data.taskId) {
-      const tasks = StorageService.getTasks();
-      const taskIndex = tasks.findIndex((t) => t.id === data.taskId);
-      if (taskIndex !== -1) {
-        tasks[taskIndex].status = 'completed';
-        tasks[taskIndex].completedAt = newSession.createdAt;
-        StorageService.saveTasks(tasks);
-      }
-    }
-
-    // Update topic confidence & completion if difficulty is good
-    if (data.topicId) {
-      const topics = StorageService.getTopics();
-      const topicIndex = topics.findIndex((t) => t.id === data.topicId);
-      if (topicIndex !== -1) {
-        const topic = topics[topicIndex];
-        const newConf = Math.min(100, Math.max(0, Math.round((topic.confidence + data.confidence) / 2)));
-        topics[topicIndex] = {
-          ...topic,
-          confidence: newConf,
-          completed: newConf >= 75 ? true : topic.completed,
-        };
-        StorageService.saveTopics(topics);
-      }
-    }
-
-    return newSession;
+    return apiFetch<StudySession>('/study-sessions', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
   },
 
   // ==================== PLAN GENERATION ====================
