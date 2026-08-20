@@ -17,13 +17,58 @@ import {
   UserPreferences,
 } from '../types';
 import { StorageService } from './storage';
+import { apiFetch, TokenStorage } from './httpClient';
 
 // Helper to simulate network latency if needed
 const delay = (ms: number = 50) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const generateId = (prefix: string) => `${prefix}_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
 
+interface SignupData {
+  name: string;
+  email: string;
+  password: string;
+  targetSemester?: string;
+  weeklyGoalHours?: number;
+  avatarUrl?: string;
+}
+
 export const apiClient = {
+  // ==================== AUTH ====================
+  // POST /api/auth/signup
+  async signup(data: SignupData, rememberMe: boolean = true): Promise<User> {
+    const res = await apiFetch<{ token: string; user: User }>('/auth/signup', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    TokenStorage.set(res.token, rememberMe);
+    return res.user;
+  },
+
+  // POST /api/auth/login
+  async login(email: string, password: string, rememberMe: boolean = true): Promise<User> {
+    const res = await apiFetch<{ token: string; user: User }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    });
+    TokenStorage.set(res.token, rememberMe);
+    return res.user;
+  },
+
+  // POST /api/auth/logout
+  async logout(): Promise<void> {
+    try {
+      await apiFetch('/auth/logout', { method: 'POST' });
+    } finally {
+      TokenStorage.clear();
+    }
+  },
+
+  // GET /api/auth/me — used to validate/restore a session on load
+  async getCurrentUser(): Promise<User> {
+    return apiFetch<User>('/auth/me');
+  },
+
   // ==================== USER & PREFERENCES ====================
   async getUser(): Promise<User> {
     await delay(30);

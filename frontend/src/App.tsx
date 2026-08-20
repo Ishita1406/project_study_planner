@@ -19,6 +19,7 @@ import {
 } from './types';
 import { apiClient } from './services/apiClient';
 import { StorageService } from './services/storage';
+import { TokenStorage } from './services/httpClient';
 import { Sidebar } from './components/layout/Sidebar';
 import { Header } from './components/layout/Header';
 import { DashboardView } from './components/dashboard/DashboardView';
@@ -78,9 +79,8 @@ export default function App() {
   const routedView = getViewFromPath(location.pathname);
   const authMode = getAuthModeFromPath(location.pathname);
   const currentView = routedView ?? 'dashboard';
-  const [isAuthenticated, setIsAuthenticated] = useState(
-    () => sessionStorage.getItem('sp_auth_v1') === 'true'
-  );
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthChecking, setIsAuthChecking] = useState(() => TokenStorage.get() !== null);
 
   const handleNavigate = useCallback(
     (view: ActiveView) => {
@@ -91,18 +91,18 @@ export default function App() {
 
   const handleAuthSuccess = useCallback(
     (authenticatedUser: User) => {
-      StorageService.saveUser(authenticatedUser);
       setUser(authenticatedUser);
       setIsAuthenticated(true);
-      sessionStorage.setItem('sp_auth_v1', 'true');
       navigate('/');
     },
     [navigate]
   );
 
-  const handleDemoLogin = useCallback(() => {
-    handleAuthSuccess(StorageService.getUser());
-  }, [handleAuthSuccess]);
+  const handleLogout = useCallback(async () => {
+    await apiClient.logout();
+    setIsAuthenticated(false);
+    navigate('/login');
+  }, [navigate]);
 
   const handleAuthModeChange = useCallback(
     (mode: AuthMode) => {
@@ -110,6 +110,32 @@ export default function App() {
     },
     [navigate]
   );
+
+  // Restore session on load by validating any stored token against the backend
+  useEffect(() => {
+    if (!TokenStorage.get()) {
+      setIsAuthChecking(false);
+      return;
+    }
+    apiClient
+      .getCurrentUser()
+      .then((restoredUser) => {
+        setUser(restoredUser);
+        setIsAuthenticated(true);
+      })
+      .catch(() => {
+        TokenStorage.clear();
+        setIsAuthenticated(false);
+      })
+      .finally(() => setIsAuthChecking(false));
+  }, []);
+
+  // Force logout when any request comes back unauthorized (expired/invalid session)
+  useEffect(() => {
+    const handleAuthExpired = () => setIsAuthenticated(false);
+    window.addEventListener('study-planner-auth-expired', handleAuthExpired);
+    return () => window.removeEventListener('study-planner-auth-expired', handleAuthExpired);
+  }, []);
 
   // Core Data States
   const [user, setUser] = useState<User>(StorageService.getUser());
@@ -308,6 +334,10 @@ export default function App() {
     showToast('All data cleared (Empty state mode)');
   };
 
+  if (isAuthChecking) {
+    return <div className="flex h-screen w-screen items-center justify-center bg-slate-50 text-sm text-slate-500">Loading…</div>;
+  }
+
   if (!isAuthenticated) {
     if (!authMode) {
       return <Navigate to="/login" replace />;
@@ -317,7 +347,6 @@ export default function App() {
       <AuthView
         initialMode={authMode}
         onAuthSuccess={handleAuthSuccess}
-        onDemoLogin={handleDemoLogin}
         onModeChange={handleAuthModeChange}
       />
     );
@@ -343,6 +372,7 @@ export default function App() {
         }
         onResetSeedData={handleResetSeedData}
         onClearData={handleClearData}
+        onLogout={handleLogout}
         isSessionActive={currentView === 'sessions'}
       />
 

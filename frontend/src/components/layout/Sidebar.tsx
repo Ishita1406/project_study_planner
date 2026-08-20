@@ -10,6 +10,7 @@ import {
   Sparkles,
   RefreshCw,
   Trash2,
+  LogOut,
 } from 'lucide-react';
 import { ActiveView, User } from '../../types';
 
@@ -21,6 +22,7 @@ interface SidebarProps {
   unreadNotificationsCount?: number;
   onResetSeedData: () => void;
   onClearData: () => void;
+  onLogout: () => void;
   isSessionActive?: boolean;
 }
 
@@ -32,6 +34,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   unreadNotificationsCount = 2,
   onResetSeedData,
   onClearData,
+  onLogout,
   isSessionActive = false,
 }) => {
   const navItems: { id: ActiveView; label: string; icon: React.ElementType; badge?: string }[] = [
@@ -175,6 +178,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
             {unreadNotificationsCount > 0 && (
               <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-indigo-600 ring-2 ring-white" />
             )}
+          </button>
+
+          <button
+            id="sidebar-logout-btn"
+            onClick={onLogout}
+            className="relative p-2 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer shrink-0 ml-1"
+            title="Sign out"
+          >
+            <LogOut className="w-4 h-4" />
           </button>
         </div>
       </div>
